@@ -3,18 +3,10 @@
 Projeto organizado em duas partes:
 
 - `frontend/`: aplicação React, a ser criada.
-- `backend/`: aplicação Spring Boot com Maven.
+- `backend/`: projeto Spring Boot com Maven, pronto para importar no Spring Tools Suite.
 
-## Backend no Spring Tools
+## Levar o backend para o Spring Tools Suite
 
-1. Abra o Spring Tools.
-2. Selecione **File > Import > Existing Maven Projects**.
-3. Escolha a pasta `backend/` e conclua a importação.
+Copie a pasta `backend/` para o ambiente desejado. No STS, selecione **File > Import > Maven > Existing Maven Projects**, escolha essa pasta e conclua a importação.
 
-O projeto usa Java 21. Para executar pelo terminal, entre em `backend/` e rode:
-
-```bash
-mvn spring-boot:run
-```
-
-O backend contém apenas a estrutura inicial do Spring Boot. A integração com a NASA ainda não foi implementada.
+O backend usa Java 21. Consulte [backend/README.md](backend/README.md) para detalhes da estrutura e execução. A integração com a NASA ainda não foi implementada.
