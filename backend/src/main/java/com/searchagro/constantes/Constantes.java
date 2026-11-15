@@ -1,14 +1,16 @@
 package com.searchagro.constantes;
 
-public class Constantes {
+public final class Constantes {
 
-    public static final String NOMINATIM_LOCALIZACAO = "https://nominatim.openstreetmap.org/search";
-    public static final String SOILGRIDS_PROPERTIES_QUERY = "https://rest.isric.org/soilgrids/v2.0/properties/query";
-    public static final String PROPRIEDADE_PH = "phh2o";
-    public static final String PROFUNDIDADE_PADRAO = "0-5cm";
-    public static final String VALOR_PADRAO = "mean";
+    public static final String NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search";
+    public static final String CMR_GRANULE_SEARCH_URL =
+            "https://cmr.earthdata.nasa.gov/search/granules.umm_json";
+    public static final String APPEEARS_API_URL = "https://appeears.earthdatacloud.nasa.gov/api";
+    public static final String SMAP_PRODUCT = "SPL3SMP_E.006";
+    public static final String SMAP_SOIL_MOISTURE_LAYER =
+            "Soil_Moisture_Retrieval_Data_AM_soil_moisture";
+    public static final double SMAP_RESOLUTION_KM = 9.0;
 
     private Constantes() {
-        // Construtor privado para classe utilitária
     }
 }

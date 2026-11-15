@@ -1,79 +1,36 @@
-# Backend
+# AgroSearch Backend
 
-Projeto Spring Boot com Maven, pronto para importar no Spring Tools Suite (STS).
+Backend Java 11 com Spring Boot para geocodificação e consulta do produto NASA SMAP `SPL3SMP_E.006`.
 
-## Importar no STS
+## Executar
 
-1. Copie a pasta `backend/` para o local de desenvolvimento desejado.
-2. No STS, selecione **File > Import > Maven > Existing Maven Projects**.
-3. Escolha a pasta `backend/`, confirme que o `pom.xml` foi encontrado e conclua.
-4. Aguarde o Maven baixar as dependências. O projeto requer Java 11.
-
-Para executar, use **Run As > Spring Boot App** no STS ou, em um terminal com Maven instalado:
+Crie uma conta [NASA Earthdata](https://urs.earthdata.nasa.gov/users/new) e acesse o [AppEEARS](https://appeears.earthdatacloud.nasa.gov/) para habilitar o acesso. Preencha `NASA_EARTHDATA_USERNAME` e `NASA_EARTHDATA_PASSWORD` no arquivo `.env` desta pasta. O arquivo já está preparado localmente e é ignorado pelo Git; o Spring Boot o carrega automaticamente ao iniciar a partir da pasta `backend`.
 
 ```bash
 mvn spring-boot:run
 ```
 
-## Organização
+Se o arquivo `.env` não existir em outra cópia do projeto, crie-o a partir do exemplo:
 
-- `src/main/java/com/searchagro/config/`: configurações da aplicação e `HttpClient`.
-- `src/main/java/com/searchagro/constantes/`: constantes de URLs e propriedades padrão.
-- `src/main/java/com/searchagro/controller/`: endpoints REST (`AnaliseSoloController`, `GeographicController`, `ApiExceptionHandler`).
-- `src/main/java/com/searchagro/dto/`: objetos de transferência de dados (`AnaliseSoloDTO`).
-- `src/main/java/com/searchagro/model/`: modelos de resposta geográfica e pedológica (`Localizacao`, `ResultadoSoilGrids`, `GeographicLocation`).
-- `src/main/java/com/searchagro/exception/`: exceções controladas da integração externa (`ApiException`, `NominatimException`).
-- `src/main/java/com/searchagro/service/`: lógica da aplicação (`ConsultaApi`, `ConsultaApiService`, `NominatimService`).
-- `src/main/resources/`: configurações e recursos (`application.properties`).
-- `src/test/java/`: testes unitários e de integração.
-
----
-
-## Análise de Solo: Consulta de pH por Endereço (Nominatim + SoilGrids)
-
-O endpoint `GET /api/analise/ph/endereco` integra automaticamente as APIs do Nominatim e do ISRIC SoilGrids:
-
-```text
-http://localhost:8080/api/analise/ph/endereco?endereco=Goiânia,Goiás,Brasil
+```bash
+cp .env.example .env
 ```
 
-### Fluxo de Execução
-1. O usuário informa apenas o endereço textual no parâmetro `endereco`.
-2. O backend consulta o Nominatim via `HttpURLConnection` e extrai latitude e longitude.
-3. Com essas coordenadas, o backend consulta a API SoilGrids para a camada superficial (`phh2o`, `0-5cm`, `mean`).
-4. O valor do pH é calculado respeitando o metadado `d_factor` informado pela API (`pH = mean / d_factor`). Se o SoilGrids retornar `null`, o valor `null` é preservado e nunca convertido para zero.
-5. Retorna o DTO estruturado `AnaliseSoloDTO`.
+O endpoint de geocodificação não exige credenciais NASA. O endpoint de umidade precisa delas para enviar e baixar a tarefa no AppEEARS.
 
-### Exemplo de Resposta com pH disponível:
-```json
-{
-  "localizacao": "Goiânia, Goiás, Brasil",
-  "latitude": -16.6869,
-  "longitude": -49.2648,
-  "propriedade": "phh2o",
-  "profundidade": "0-5cm",
-  "ph": 5.2
-}
-```
+## Endpoints
 
-### Exemplo de Resposta quando a API não disponibilizar estimativa de pH:
-```json
-{
-  "localizacao": "Goiânia, Goiás, Brasil",
-  "latitude": -16.6869,
-  "longitude": -49.2648,
-  "propriedade": "phh2o",
-  "profundidade": "0-5cm",
-  "ph": null
-}
-```
+- `GET /api/localizacao/buscar?endereco=...`: geocodifica endereço, cidade ou CEP pelo Nominatim.
+- `POST /api/umidade/analisar`: recebe `{"poligono":{"coordenadas":[{"latitude":-16.68,"longitude":-49.25}, ...]}}`.
 
----
+O polígono deve ser fechado repetindo a primeira coordenada no final.
 
-## Consulta de Localização Direta
+## Integração SMAP
 
-O endpoint `GET /api/geographic/search` recebe o parâmetro `q` enviado pelo frontend, consulta o Nominatim e devolve uma lista de `GeographicLocation`. O caminho anterior `/api/nominatim/search` continua disponível como alias:
+O backend consulta no CMR a data mais recente disponível do produto Enhanced L3 Radiometer Global Daily, submissão `SPL3SMP_E.006` pelo AppEEARS, aguarda a tarefa de área, baixa o GeoTIFF da camada `Soil_Moisture_Retrieval_Data_AM_soil_moisture` e extrai células válidas que caem dentro do polígono.
 
-```text
-http://localhost:8080/api/geographic/search?q=Goi%C3%A2nia%2C%20Goi%C3%A1s%2C%20Brasil
-```
+Valores fora do intervalo válido publicado (0,02–0,5 m³/m³), sem coordenadas válidas ou fora da área são descartados. Uma célula de grade nominal de 9 km não é uma medição exata da propriedade.
+
+Sem CC e PMP conhecidos, cada ponto retorna `pad: null`, `classificacao: "SEM_CLASSIFICACAO"` e `nivelAtencao: "NAO_CLASSIFICADO"`. Não são gerados alertas ou recomendações de irrigação.
+
+O AppEEARS é um serviço assíncrono: a primeira análise pode levar alguns minutos. Consultas idênticas são reutilizadas em cache por 15 minutos.
