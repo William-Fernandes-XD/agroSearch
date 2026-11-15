@@ -3,6 +3,7 @@ package com.searchagro.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -60,8 +61,12 @@ class UmidadeControllerTest {
     void rejectsAnalysisWithoutPolygon() throws Exception {
         mockMvc.perform(post("/api/umidade/analisar")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Origin", "https://appauma-tenley-accusably.ngrok-free.dev")
                         .content("{}"))
                 .andExpect(status().isBadRequest())
+                .andExpect(header().string(
+                        "Access-Control-Allow-Origin",
+                        "https://appauma-tenley-accusably.ngrok-free.dev"))
                 .andExpect(jsonPath("$.erro").exists());
     }
 

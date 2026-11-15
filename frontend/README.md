@@ -9,7 +9,9 @@ npm install
 npm run dev
 ```
 
-O frontend espera o backend em `http://localhost:8080/api`. Configure `VITE_API_BASE_URL` para usar outra URL.
+No modo de desenvolvimento, as chamadas para `/api` são encaminhadas pelo Vite para `http://localhost:8080`. Inicie o Spring Boot e o Vite; para compartilhar a interface, exponha a porta `5173` com o ngrok. O navegador dos visitantes acessará o backend pelo mesmo domínio público da interface, e o proxy do Vite fará a conexão local com o Spring Boot.
+
+Para apontar diretamente para uma API remota (por exemplo, em um build de produção), configure `VITE_API_BASE_URL` com a URL pública completa da API, incluindo `/api`, antes de iniciar o Vite ou gerar o build. Nesse caso, configure também `FRONTEND_ALLOWED_ORIGIN` no backend com a origem pública do frontend.
 
 ## Build
 

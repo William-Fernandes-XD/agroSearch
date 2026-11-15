@@ -6,6 +6,8 @@ Backend Java 11 com Spring Boot para geocodificação e consulta do produto NASA
 
 Crie uma conta [NASA Earthdata](https://urs.earthdata.nasa.gov/users/new) e acesse o [AppEEARS](https://appeears.earthdatacloud.nasa.gov/) para habilitar o acesso. Preencha `NASA_EARTHDATA_USERNAME` e `NASA_EARTHDATA_PASSWORD` no arquivo `.env` desta pasta. O arquivo já está preparado localmente e é ignorado pelo Git; o Spring Boot o carrega automaticamente ao iniciar a partir da pasta `backend`.
 
+O backend permite por padrão `http://localhost:5173` e `https://appauma-tenley-accusably.ngrok-free.dev`. Reinicie o Spring Boot após atualizar o código/configuração. Se o domínio do túnel mudar, configure `FRONTEND_ALLOWED_ORIGINS` no `.env` com as origens permitidas separadas por vírgula, por exemplo `http://localhost:5173,https://seu-novo-dominio.ngrok-free.dev`. Use somente as origens, sem caminhos.
+
 ```bash
 mvn spring-boot:run
 ```
