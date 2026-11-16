@@ -10,6 +10,11 @@ import java.util.Base64;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.locationtech.jts.geom.Coordinate;
@@ -23,7 +28,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.searchagro.conexao.HttpClientConfig.IntegracaoProperties;
+import com.searchagro.conexao.SmapRasterData;
 import com.searchagro.constantes.Constantes;
+import com.searchagro.entities.PontoUmidade;
 import com.searchagro.exception.IntegracaoException;
 
 @Component
@@ -32,6 +39,8 @@ public class AppEearsClient {
     private static final DateTimeFormatter APPEEARS_DATE = DateTimeFormatter.ofPattern("MM-dd-yyyy");
     private static final String PRODUCT = Constantes.SMAP_PRODUCT;
     private static final String LAYER = Constantes.SMAP_SOIL_MOISTURE_LAYER;
+    private static final String NDVI_PRODUCT = "MOD13Q1.061";
+    private static final String NDVI_LAYER = "_250m_16_days_NDVI";
     private static final String API_BASE = Constantes.APPEEARS_API_URL;
 
     private final HttpClient httpClient;
@@ -61,9 +70,9 @@ public class AppEearsClient {
         this.taskTimeout = properties.getAppEearsTaskTimeout();
     }
 
-    public byte[] downloadSurfaceMoisture(Polygon polygon, LocalDate dataReferencia) {
+    public SmapRasterData downloadSurfaceMoisture(Polygon polygon, LocalDate dataReferencia) {
         String taskId = submitAreaTask(polygon, dataReferencia);
-        awaitTask(taskId);
+        awaitTask(taskId, "SMAP");
         JsonNode bundle = getJson("/bundle/" + taskId);
         JsonNode files = bundle.path("files");
         if (!files.isArray()) {
@@ -72,19 +81,344 @@ public class AppEearsClient {
                     HttpStatus.BAD_GATEWAY);
         }
 
+        byte[] morningRaster = null;
+        byte[] afternoonRaster = null;
+        List<JsonNode> geotiffFiles = new ArrayList<>();
         for (JsonNode file : files) {
             String filename = file.path("file_name").asText("");
             String fileId = file.path("file_id").asText("");
-            if (filename.toLowerCase(java.util.Locale.ROOT).endsWith(".tif")
-                    && filename.contains(LAYER)
-                    && !fileId.isEmpty()) {
-                return getBytes("/bundle/" + taskId + "/" + fileId);
+            if (!isGeoTiff(filename, file.path("file_type").asText("")) || fileId.isEmpty()) {
+                continue;
+            }
+            geotiffFiles.add(file);
+            SmapLayer layer = identifySmapLayer(filename);
+            if (layer == SmapLayer.MORNING) {
+                morningRaster = getBytes("/bundle/" + taskId + "/" + fileId);
+            } else if (layer == SmapLayer.AFTERNOON) {
+                afternoonRaster = getBytes("/bundle/" + taskId + "/" + fileId);
             }
         }
 
+        if (morningRaster == null
+                && afternoonRaster == null
+                && geotiffFiles.size() == 1
+                && geotiffFiles.get(0).path("file_name").asText("")
+                        .toLowerCase(Locale.ROOT).contains(PRODUCT.toLowerCase(Locale.ROOT))) {
+            JsonNode onlyRaster = geotiffFiles.get(0);
+            byte[] raster = getBytes("/bundle/" + taskId + "/"
+                    + onlyRaster.path("file_id").asText());
+            String filename = onlyRaster.path("file_name").asText("");
+            SmapLayer layer = identifySmapLayer(filename);
+            if (layer == SmapLayer.AFTERNOON) {
+                afternoonRaster = raster;
+            } else {
+                morningRaster = raster;
+            }
+        }
+
+        if (morningRaster != null || afternoonRaster != null) {
+            return new SmapRasterData(morningRaster, afternoonRaster);
+        }
+
         throw new IntegracaoException(
-                "O AppEEARS concluiu a consulta, mas não gerou o GeoTIFF de umidade do solo.",
+                describeMissingSmapRasters(taskId, dataReferencia, files),
                 HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    static boolean isGeoTiff(String filename, String fileType) {
+        String normalizedFilename = filename.toLowerCase(Locale.ROOT);
+        String normalizedType = fileType.toLowerCase(Locale.ROOT);
+        return normalizedFilename.endsWith(".tif")
+                || normalizedFilename.endsWith(".tiff")
+                || "tif".equals(normalizedType)
+                || "tiff".equals(normalizedType)
+                || "geotiff".equals(normalizedType)
+                || normalizedType.startsWith("image/tiff");
+    }
+
+    static SmapLayer identifySmapLayer(String filename) {
+        String normalizedFilename = filename.toLowerCase(Locale.ROOT);
+        if (normalizedFilename.contains(Constantes.SMAP_PM_SOIL_MOISTURE_LAYER.toLowerCase(Locale.ROOT))) {
+            return SmapLayer.AFTERNOON;
+        }
+        if (normalizedFilename.contains(LAYER.toLowerCase(Locale.ROOT))) {
+            return SmapLayer.MORNING;
+        }
+        return SmapLayer.UNKNOWN;
+    }
+
+    private String describeMissingSmapRasters(
+            String taskId,
+            LocalDate dataReferencia,
+            JsonNode files) {
+        List<String> fileDescriptions = new ArrayList<>();
+        if (files.isArray()) {
+            for (JsonNode file : files) {
+                String filename = file.path("file_name").asText("(sem nome)");
+                String fileType = file.path("file_type").asText("tipo desconhecido");
+                fileDescriptions.add(filename + " [" + fileType + "]");
+                if (fileDescriptions.size() == 8) {
+                    break;
+                }
+            }
+        }
+        String returnedFiles = fileDescriptions.isEmpty()
+                ? "nenhum arquivo"
+                : String.join(", ", fileDescriptions);
+        return "O AppEEARS concluiu a tarefa SMAP " + taskId
+                + " para " + dataReferencia
+                + ", mas o bundle não contém um GeoTIFF reconhecível das camadas AM/PM solicitadas. "
+                + "Arquivos listados: " + returnedFiles
+                + ". Verifique se há dados SMAP para essa data e se as camadas de umidade foram "
+                + "incluídas no resultado.";
+    }
+
+    enum SmapLayer {
+        MORNING,
+        AFTERNOON,
+        UNKNOWN
+    }
+
+    public Map<Integer, Double> downloadNdvi(List<PontoUmidade> points, LocalDate dataNdvi) {
+        if (points.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+
+        String taskId = submitPointTask(points, dataNdvi);
+        awaitTask(taskId, "NDVI");
+        JsonNode bundle = getJson("/bundle/" + taskId);
+        JsonNode files = bundle.path("files");
+        if (!files.isArray()) {
+            throw new IntegracaoException(
+                    "O AppEEARS não retornou os arquivos da extração de NDVI.",
+                    HttpStatus.BAD_GATEWAY);
+        }
+
+        Map<Integer, Double> observations = new HashMap<>();
+        Map<Integer, LocalDate> observationDates = new HashMap<>();
+        boolean foundCsv = false;
+        for (JsonNode file : files) {
+            String filename = file.path("file_name").asText("");
+            String fileId = file.path("file_id").asText("");
+            if (filename.toLowerCase(Locale.ROOT).endsWith(".csv") && !fileId.isEmpty()) {
+                foundCsv = true;
+                parseNdviCsv(
+                        getBytes("/bundle/" + taskId + "/" + fileId),
+                        filename,
+                        points,
+                        dataNdvi,
+                        observations,
+                        observationDates);
+            }
+        }
+        if (!foundCsv) {
+            throw new IntegracaoException(
+                    "O AppEEARS concluiu a tarefa sem disponibilizar o CSV de NDVI.",
+                    HttpStatus.BAD_GATEWAY);
+        }
+        return observations;
+    }
+
+    private String submitPointTask(List<PontoUmidade> points, LocalDate dataNdvi) {
+        ObjectNode task = objectMapper.createObjectNode();
+        task.put("task_name", "AgroSearch-NDVI-" + java.util.UUID.randomUUID());
+        task.put("task_type", "point");
+
+        ObjectNode params = task.putObject("params");
+        ArrayNode dates = params.putArray("dates");
+        ObjectNode date = dates.addObject();
+        String observationDate = dataNdvi.format(APPEEARS_DATE);
+        date.put("startDate", observationDate);
+        date.put("endDate", observationDate);
+        date.put("recurring", false);
+
+        ArrayNode layers = params.putArray("layers");
+        ObjectNode layer = layers.addObject();
+        layer.put("product", NDVI_PRODUCT);
+        layer.put("layer", NDVI_LAYER);
+
+        ArrayNode coordinates = params.putArray("coordinates");
+        for (int index = 0; index < points.size(); index++) {
+            PontoUmidade point = points.get(index);
+            ObjectNode coordinate = coordinates.addObject();
+            coordinate.put("latitude", point.getLatitude());
+            coordinate.put("longitude", point.getLongitude());
+            coordinate.put("id", pointId(index));
+        }
+
+        JsonNode response = sendJson("POST", "/task", task, true);
+        String taskId = response.path("task_id").asText("");
+        if (taskId.isEmpty()) {
+            throw new IntegracaoException(
+                    "O AppEEARS não retornou o identificador da extração de NDVI.",
+                    HttpStatus.BAD_GATEWAY);
+        }
+        return taskId;
+    }
+
+    void parseNdviCsv(
+            byte[] csvBytes,
+            String filename,
+            List<PontoUmidade> points,
+            LocalDate dataReferencia,
+            Map<Integer, Double> observations,
+            Map<Integer, LocalDate> observationDates) {
+        String csv = new String(csvBytes, StandardCharsets.UTF_8);
+        String[] lines = csv.split("\\R");
+        if (lines.length < 2) {
+            return;
+        }
+
+        List<String> headers = parseCsvLine(lines[0]);
+        int dateColumn = findColumn(headers, "date");
+        int ndviColumn = findColumn(headers, "ndvi");
+        int idColumn = findColumn(headers, "id", "point", "site");
+        int latitudeColumn = findColumn(headers, "latitude", "lat");
+        int longitudeColumn = findColumn(headers, "longitude", "lon", "long");
+        if (dateColumn < 0 || ndviColumn < 0) {
+            throw new IntegracaoException(
+                    "O AppEEARS retornou um CSV de NDVI em formato inesperado.",
+                    HttpStatus.BAD_GATEWAY);
+        }
+
+        for (int lineIndex = 1; lineIndex < lines.length; lineIndex++) {
+            List<String> row = parseCsvLine(lines[lineIndex]);
+            if (row.size() <= Math.max(dateColumn, ndviColumn)) {
+                continue;
+            }
+
+            LocalDate observationDate = parseObservationDate(row.get(dateColumn));
+            if (observationDate == null || !observationDate.equals(dataReferencia)) {
+                continue;
+            }
+            int pointIndex = findPointIndex(
+                    row, idColumn, latitudeColumn, longitudeColumn, points, filename);
+            if (pointIndex < 0) {
+                throw new IntegracaoException(
+                        "Não foi possível associar as linhas de NDVI do AppEEARS aos pontos solicitados.",
+                        HttpStatus.BAD_GATEWAY);
+            }
+
+            Double ndvi = parseNdvi(row.get(ndviColumn));
+            if (ndvi == null) {
+                continue;
+            }
+            LocalDate previousDate = observationDates.get(pointIndex);
+            if (previousDate == null || observationDate.isAfter(previousDate)) {
+                observations.put(pointIndex, ndvi);
+                observationDates.put(pointIndex, observationDate);
+            }
+        }
+    }
+
+    private int findPointIndex(
+            List<String> row,
+            int idColumn,
+            int latitudeColumn,
+            int longitudeColumn,
+            List<PontoUmidade> points,
+            String filename) {
+        if (idColumn >= 0 && idColumn < row.size()) {
+            String id = row.get(idColumn).trim();
+            if (id.startsWith("p-")) {
+                try {
+                    int index = Integer.parseInt(id.substring(2));
+                    if (index >= 0 && index < points.size()) {
+                        return index;
+                    }
+                } catch (NumberFormatException ignored) {
+                    // Fall through to coordinate matching.
+                }
+            }
+        }
+
+        if (latitudeColumn >= 0 && longitudeColumn >= 0
+                && latitudeColumn < row.size() && longitudeColumn < row.size()) {
+            try {
+                double latitude = Double.parseDouble(row.get(latitudeColumn).trim());
+                double longitude = Double.parseDouble(row.get(longitudeColumn).trim());
+                for (int index = 0; index < points.size(); index++) {
+                    PontoUmidade point = points.get(index);
+                    if (Math.abs(point.getLatitude() - latitude) < 0.0001
+                            && Math.abs(point.getLongitude() - longitude) < 0.0001) {
+                        return index;
+                    }
+                }
+            } catch (NumberFormatException ignored) {
+                return -1;
+            }
+        }
+        for (int index = 0; index < points.size(); index++) {
+            if (filename.contains(pointId(index))) {
+                return index;
+            }
+        }
+        return points.size() == 1 ? 0 : -1;
+    }
+
+    private List<String> parseCsvLine(String line) {
+        List<String> values = new ArrayList<>();
+        StringBuilder value = new StringBuilder();
+        boolean quoted = false;
+        for (int index = 0; index < line.length(); index++) {
+            char current = line.charAt(index);
+            if (current == '"') {
+                if (quoted && index + 1 < line.length() && line.charAt(index + 1) == '"') {
+                    value.append('"');
+                    index++;
+                } else {
+                    quoted = !quoted;
+                }
+            } else if (current == ',' && !quoted) {
+                values.add(value.toString());
+                value.setLength(0);
+            } else {
+                value.append(current);
+            }
+        }
+        values.add(value.toString());
+        return values;
+    }
+
+    private int findColumn(List<String> headers, String... names) {
+        for (int index = 0; index < headers.size(); index++) {
+            String header = headers.get(index).replace("\uFEFF", "").toLowerCase(Locale.ROOT);
+            for (String name : names) {
+                if (header.equals(name) || header.endsWith("_" + name) || header.contains(name)) {
+                    return index;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private LocalDate parseObservationDate(String value) {
+        String date = value.trim();
+        try {
+            return date.length() >= 10
+                    ? LocalDate.parse(date.substring(0, 10))
+                    : LocalDate.parse(date, DateTimeFormatter.BASIC_ISO_DATE);
+        } catch (java.time.DateTimeException exception) {
+            return null;
+        }
+    }
+
+    private Double parseNdvi(String value) {
+        try {
+            String trimmedValue = value.trim();
+            double rawValue = Double.parseDouble(trimmedValue);
+            boolean integerRawValue = trimmedValue.matches("-?\\d+");
+            double ndvi = Math.abs(rawValue) > 1.0 || integerRawValue
+                    ? rawValue * 0.0001
+                    : rawValue;
+            return Double.isFinite(ndvi) && ndvi >= -0.2 && ndvi <= 1.0 ? ndvi : null;
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private String pointId(int index) {
+        return "p-" + index;
     }
 
     private String submitAreaTask(Polygon polygon, LocalDate dataReferencia) {
@@ -103,9 +437,12 @@ public class AppEearsClient {
         date.putArray("yearRange").add(2000).add(2050);
 
         ArrayNode layers = params.putArray("layers");
-        ObjectNode layer = layers.addObject();
-        layer.put("product", PRODUCT);
-        layer.put("layer", LAYER);
+        ObjectNode morningLayer = layers.addObject();
+        morningLayer.put("product", PRODUCT);
+        morningLayer.put("layer", LAYER);
+        ObjectNode afternoonLayer = layers.addObject();
+        afternoonLayer.put("product", PRODUCT);
+        afternoonLayer.put("layer", Constantes.SMAP_PM_SOIL_MOISTURE_LAYER);
 
         ObjectNode output = params.putObject("output");
         output.putObject("format").put("type", "geotiff");
@@ -140,7 +477,7 @@ public class AppEearsClient {
         return collection;
     }
 
-    private void awaitTask(String taskId) {
+    private void awaitTask(String taskId, String product) {
         long deadline = System.nanoTime() + taskTimeout.toNanos();
         while (System.nanoTime() < deadline) {
             JsonNode status = getJson("/status/" + taskId);
@@ -154,13 +491,17 @@ public class AppEearsClient {
             }
             if ("error".equalsIgnoreCase(state) || "failed".equalsIgnoreCase(state)) {
                 throw new IntegracaoException(
-                        "O processamento da área pelo AppEEARS falhou.",
+                        "O processamento " + product + " pelo AppEEARS falhou.",
                         HttpStatus.BAD_GATEWAY);
             }
             waitBeforePolling();
         }
         throw new IntegracaoException(
-                "O processamento SMAP excedeu o tempo limite. Tente novamente mais tarde.",
+                "A NASA AppEEARS ainda não concluiu o processamento " + product
+                        + " dentro do limite configurado de "
+                        + taskTimeout.toMinutes()
+                        + " minutos. Áreas extensas podem levar mais tempo; aumente "
+                        + "NASA_APPEEARS_TASK_TIMEOUT se necessário.",
                 HttpStatus.GATEWAY_TIMEOUT);
     }
 

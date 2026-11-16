@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { MapCanvas } from './components/MapCanvas'
 import { mapController } from './controllers/mapController'
 import type {
+  AnalysisProgress,
   GeographicCoordinate,
   LocationResult,
   MoistureAnalysis,
@@ -12,6 +13,18 @@ const initialCenter: GeographicCoordinate = { latitude: -15.78, longitude: -47.9
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Ocorreu um erro inesperado.'
+}
+
+function formatValue(value: number | null, digits = 3) {
+  if (value === null || !Number.isFinite(value)) return 'Indisponível'
+  return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: digits }).format(value)
+}
+
+function formatDuration(milliseconds: number | undefined) {
+  if (milliseconds === undefined || !Number.isFinite(milliseconds)) return 'Indisponível'
+  return milliseconds >= 1000
+    ? `${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(milliseconds / 1000)} s`
+    : `${Math.round(milliseconds)} ms`
 }
 
 function closePolygon(coordinates: GeographicCoordinate[]): GeographicCoordinate[] {
@@ -32,9 +45,15 @@ function App() {
   const [draftCoordinates, setDraftCoordinates] = useState<GeographicCoordinate[]>([])
   const [polygon, setPolygon] = useState<GeographicCoordinate[]>([])
   const [analysis, setAnalysis] = useState<MoistureAnalysis | null>(null)
+  const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress | null>(null)
+  const [showRadarIndex, setShowRadarIndex] = useState(false)
   const [error, setError] = useState('')
 
   const mapPoints = analysis?.pontos ?? []
+  const radarPoints = analysis?.pontosIndiceRadar ?? []
+  const hasCompleteRefinedMoisture = mapPoints.length > 0 && mapPoints.every(
+    (point) => point.umidadeRefinada !== null && Number.isFinite(point.umidadeRefinada),
+  )
   const handleAreaDrawn = useCallback((coordinates: GeographicCoordinate[]) => {
     setDraftCoordinates(coordinates)
     setError(coordinates.length > 0
@@ -77,6 +96,7 @@ function App() {
     setDraftCoordinates([])
     setPolygon([])
     setAnalysis(null)
+    setShowRadarIndex(false)
     setError('')
     setIsDrawing(true)
   }
@@ -92,10 +112,11 @@ function App() {
     setPolygon(closedPolygon)
     setError('')
     setIsAnalyzing(true)
+    setAnalysisProgress(null)
     try {
       const result = await mapController.analyzeArea({
         poligono: { coordenadas: closedPolygon },
-      })
+      }, setAnalysisProgress)
       setAnalysis(result)
     } catch (requestError) {
       setError(errorMessage(requestError))
@@ -122,13 +143,19 @@ function App() {
         </div>
       </header>
 
-      <section className="map-stage" aria-label="Mapa de umidade do solo">
+      <section
+        className="map-stage"
+        aria-label={showRadarIndex ? 'Mapa do retorno relativo do radar Sentinel-1' : 'Mapa de umidade do solo'}
+      >
         <MapCanvas
           center={center}
           selectedLocation={selectedLocation}
           draftCoordinates={draftCoordinates}
           polygon={polygon}
           moisturePoints={mapPoints}
+          radarPoints={radarPoints}
+          showRadarIndex={showRadarIndex}
+          hasCompleteRefinedMoisture={hasCompleteRefinedMoisture}
           isDrawing={isDrawing}
           onAreaDrawn={handleAreaDrawn}
         />
@@ -186,7 +213,7 @@ function App() {
                   onClick={confirmArea}
                   disabled={draftCoordinates.length < 3 || isAnalyzing}
                 >
-                  {isAnalyzing ? 'Consultando SMAP…' : 'Analisar área selecionada'}
+                  {isAnalyzing ? 'Consultando satélites…' : 'Analisar área selecionada'}
                 </button>
                 <button type="button" className="text-button" onClick={cancelDrawing}>
                   Cancelar
@@ -209,25 +236,134 @@ function App() {
                 {' · '}resolução nominal {analysis.resolucaoEspacialKm} km
               </span>
               <span className="analysis-warning">{analysis.aviso}</span>
+              <span className="analysis-warning">{analysis.avisoRadar}</span>
+              <details className="timing-details">
+                <summary>Tempo das consultas externas</summary>
+                <dl>
+                  <dt>CMR — data SMAP</dt>
+                  <dd>{formatDuration(analysis.temposConsultaMs?.cmrSmap)}</dd>
+                  <dt>AppEEARS — dados SMAP</dt>
+                  <dd>{formatDuration(analysis.temposConsultaMs?.appeearsSmap)}</dd>
+                  <dt>Leitura do GeoTIFF</dt>
+                  <dd>{formatDuration(analysis.temposConsultaMs?.geotiffProcessing)}</dd>
+                  <dt>CMR — data NDVI</dt>
+                  <dd>{formatDuration(analysis.temposConsultaMs?.cmrNdvi)}</dd>
+                  <dt>AppEEARS — dados NDVI</dt>
+                  <dd>{formatDuration(analysis.temposConsultaMs?.appeearsNdvi)}</dd>
+                  <dt>NASA POWER — temperatura</dt>
+                  <dd>{formatDuration(analysis.temposConsultaMs?.nasaPower)}</dd>
+                  <dt>Copernicus — Sentinel-1</dt>
+                  <dd>{formatDuration(analysis.temposConsultaMs?.sentinel1)}</dd>
+                  <dt>Total da análise no backend</dt>
+                  <dd>{formatDuration(analysis.temposConsultaMs?.total)}</dd>
+                </dl>
+                <small>
+                  São tempos do processamento no backend. CMR pode responder pelo cache; após SMAP,
+                  NDVI e temperatura são consultados em paralelo, então os tempos não devem ser somados.
+                </small>
+              </details>
+              <div className="point-results" aria-label="Dados por ponto da área">
+                {analysis.pontos.map((point, index) => (
+                  <div
+                    className="point-result"
+                    key={`${point.latitude}-${point.longitude}`}
+                  >
+                    <strong>Ponto {index + 1}</strong>
+                    <span>
+                      NDVI {formatValue(point.ndvi)}
+                      {' · '}TS regional {formatValue(point.temperaturaSuperficieC, 1)} °C
+                    </span>
+                    <span>
+                      Secura aprox. {formatValue(point.indiceSecuraAproximado)}
+                      {' · '}UR {formatValue(point.umidadeRefinada)} m³/m³
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
-          {analysis && analysis.pontos.length > 0 && (
-            <div className="heat-legend" aria-label="Legenda da umidade observada">
-              <strong>Umidade observada <span>(m³/m³)</span></strong>
+          {analysis && (
+            <fieldset className="layer-switch">
+              <legend>Camada exibida no mapa</legend>
+              <label>
+                <input
+                  type="radio"
+                  name="map-layer"
+                  checked={!showRadarIndex}
+                  onChange={() => setShowRadarIndex(false)}
+                />
+                <span>SMAP · {analysis.resolucaoEspacialKm} km</span>
+              </label>
+              <label className={!radarPoints.length ? 'layer-disabled' : ''}>
+                <input
+                  type="radio"
+                  name="map-layer"
+                  checked={showRadarIndex}
+                  onChange={() => setShowRadarIndex(true)}
+                  disabled={!radarPoints.length}
+                />
+                <span>Sentinel-1 experimental · ~10 ha/célula</span>
+              </label>
+            </fieldset>
+          )}
+
+          {analysis && (showRadarIndex ? radarPoints.length > 0 : analysis.pontos.length > 0) && (
+            <div className="heat-legend" aria-label="Legenda da umidade no mapa">
+              <strong>
+                {showRadarIndex
+                  ? 'Retorno relativo do radar Sentinel-1'
+                  : hasCompleteRefinedMoisture
+                    ? 'Zonas de umidade refinada estimada'
+                    : 'Zonas de umidade SMAP'}
+                {!showRadarIndex && <span> (m³/m³)</span>}
+              </strong>
               <div className="legend-gradient" />
               <div className="legend-labels">
-                <span>Menor valor</span>
-                <span>Maior valor</span>
+                {showRadarIndex ? (
+                  <>
+                    <span>Retorno menor</span>
+                    <span>Relativo à área</span>
+                    <span>Retorno maior</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Crítico · muito seco</span>
+                    <span>Alerta · quase seco</span>
+                    <span>Ideal · maior umidade</span>
+                  </>
+                )}
               </div>
-              <small>Gradiente de medição, não representa risco de irrigação.</small>
+              <small>
+                {showRadarIndex
+                  ? `Índice normalizado do retorno VV entre os percentis 10 e 90 desta área; não é umidade do solo. `
+                    + `A grade-alvo é ${Math.round(analysis.resolucaoRadarMetros)} m (~10 ha), no período `
+                    + `${analysis.periodoRadar}. Vegetação, rugosidade e geometria do radar também afetam o sinal.`
+                  : 'Escala fixa de umidade volumétrica: vermelho baixa, laranja atenção e azul alta. '
+                    + 'Áreas sem células SMAP válidas ou além do suporte dos pontos ficam sem preenchimento; '
+                    + 'não são interpoladas através de grandes lacunas. As faixas são indicativas, não um '
+                    + 'diagnóstico agronômico. Resolução nominal: 9 km.'}
+              </small>
             </div>
           )}
         </div>
 
         {isAnalyzing && (
           <div className="loading-banner" role="status">
-            Consultando o produto diário SMAP. O processamento da NASA pode levar alguns minutos.
+            <div className="progress-heading">
+              <strong>{analysisProgress?.task ?? 'Iniciando análise'}</strong>
+              <span>{analysisProgress?.percentage ?? 0}%</span>
+            </div>
+            <progress
+              className="analysis-progress-bar"
+              max="100"
+              value={analysisProgress?.percentage ?? 0}
+              aria-label="Progresso da análise"
+            />
+            <div>
+              <strong>Ferramenta:</strong> {analysisProgress?.tool ?? 'AgroSearch'}
+            </div>
+            <div>{analysisProgress?.reason ?? 'Preparando a consulta da área.'}</div>
           </div>
         )}
       </section>

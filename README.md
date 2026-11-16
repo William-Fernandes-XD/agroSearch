@@ -11,6 +11,7 @@ Sem capacidade de campo (CC) e ponto de murcha permanente (PMP) medidos/configur
 - Backend: Java 11, Spring Boot 2.7, Maven, Java `HttpClient`, Jackson, GeoTools e JTS.
 - Frontend: React, TypeScript, Vite, Leaflet, React-Leaflet, Axios e CSS.
 - Dados: NASA SMAP via AppEEARS, metadados de granules via CMR, geocodificação via Nominatim.
+- Camada experimental opcional: retorno relativo Sentinel-1 via Copernicus Data Space, em grade-alvo de ~316 m; não representa umidade medida.
 
 ## Pré-requisitos
 
@@ -30,6 +31,8 @@ mvn spring-boot:run
 ```
 
 Cadastre-se em [NASA Earthdata](https://urs.earthdata.nasa.gov/users/new) e acesse o [AppEEARS](https://appeears.earthdatacloud.nasa.gov/) para habilitar o acesso. O arquivo `backend/.env` já está preparado localmente e não é enviado ao Git. O backend inicia em `http://localhost:8080`. Nunca coloque essas credenciais no frontend.
+
+Para habilitar também a camada experimental de retorno Sentinel-1, configure `COPERNICUS_CLIENT_ID` e `COPERNICUS_CLIENT_SECRET` no mesmo `.env`, após registrar um OAuth client no [dashboard Sentinel Hub](https://shapps.dataspace.copernicus.eu/dashboard/). A camada é relativa à área analisada e não é umidade volumétrica; sem essas credenciais, o SMAP continua disponível.
 
 ### Frontend
 
@@ -51,7 +54,7 @@ O Vite exibe o endereço local do frontend (normalmente `http://localhost:5173`)
 4. O backend identifica a granule diária mais recente, pede ao AppEEARS a camada superficial do SMAP para o polígono e processa o GeoTIFF.
 5. Os pontos válidos são enviados ao mapa com latitude, longitude, valor de umidade e data de referência.
 
-O mapa visualiza os valores observados, não um diagnóstico agronômico. Como CC e PMP ainda não estão disponíveis, os pontos ficam como `SEM_CLASSIFICACAO` e nenhuma zona é apresentada como necessidade de irrigação. A intensidade do gradiente no mapa representa a umidade observada, não o nível de risco.
+O mapa visualiza valores SMAP com escala fixa: valores menores tendem ao vermelho/laranja e maiores ao ciano/azul. A superfície é interpolada apenas nas proximidades de células válidas; a interpolação não cria medições nem aumenta a resolução nominal de aproximadamente 9 km. Como CC e PMP ainda não estão disponíveis, as cores não são diagnóstico agronômico nem recomendação de irrigação.
 
 ## Endpoints do backend
 
@@ -83,6 +86,8 @@ Content-Type: application/json
 ```
 
 A resposta contém `dataReferencia`, `resolucaoEspacialKm`, `produto`, `unidade`, `classificacaoDisponivel`, `aviso` e `pontos`. Cada ponto inclui latitude/longitude, `umidadeVolumetrica`, `pad`, `classificacao` e `nivelAtencao`.
+
+Quando o Copernicus estiver configurado e houver cobertura Sentinel-1, a resposta também pode incluir `pontosIndiceRadar`, `resolucaoRadarMetros`, `periodoRadar` e `avisoRadar`. Essa camada de ~316 m mostra apenas retorno de radar relativo dentro da área, não umidade volumétrica.
 
 ## Estrutura
 

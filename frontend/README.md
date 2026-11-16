@@ -11,7 +11,9 @@ npm run dev
 
 No modo de desenvolvimento, as chamadas para `/api` são encaminhadas pelo Vite para `http://localhost:8080`. Inicie o Spring Boot e o Vite; para compartilhar a interface, exponha a porta `5173` com o ngrok. O navegador dos visitantes acessará o backend pelo mesmo domínio público da interface, e o proxy do Vite fará a conexão local com o Spring Boot.
 
-Para apontar diretamente para uma API remota (por exemplo, em um build de produção), configure `VITE_API_BASE_URL` com a URL pública completa da API, incluindo `/api`, antes de iniciar o Vite ou gerar o build. Nesse caso, configure também `FRONTEND_ALLOWED_ORIGIN` no backend com a origem pública do frontend.
+Para apontar diretamente para uma API remota (por exemplo, em um build de produção), configure `VITE_API_BASE_URL` com a URL pública completa da API, incluindo `/api`, antes de iniciar o Vite ou gerar o build. Nesse caso, configure também `FRONTEND_ALLOWED_ORIGINS` no backend com a origem pública do frontend.
+
+A análise retorna a umidade SMAP por ponto, NDVI MODIS e temperatura TS da NASA POWER. Opcionalmente, pode incluir uma camada experimental de retorno relativo do radar Sentinel-1 em células-alvo de aproximadamente 10 ha. Essa camada não é uma medição de umidade do solo e exige credenciais Copernicus configuradas apenas no backend. A UR refinada só é exibida quando os parâmetros locais da fórmula estiverem configurados no backend; consulte o README do backend para detalhes.
 
 ## Build
 

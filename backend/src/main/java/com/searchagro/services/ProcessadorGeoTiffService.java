@@ -28,6 +28,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import com.searchagro.entities.PontoUmidade;
+import com.searchagro.conexao.SmapRasterData;
 import com.searchagro.enums.ClassificacaoUmidade;
 import com.searchagro.enums.NivelAtencao;
 import com.searchagro.exception.IntegracaoException;
@@ -39,15 +40,37 @@ public class ProcessadorGeoTiffService {
     private static final double MAX_VALID_MOISTURE = 0.5;
     private static final GeometryFactory GEOMETRY_FACTORY = new GeometryFactory();
 
-    public List<PontoUmidade> processar(byte[] geoTiff, Geometry polygon) {
+    public ResultadoProcessamentoGeoTiff processar(byte[] geoTiff, Geometry polygon) {
+        return processar(new SmapRasterData(geoTiff, null), polygon);
+    }
+
+    public ResultadoProcessamentoGeoTiff processar(SmapRasterData rasters, Geometry polygon) {
         File temporaryFile = null;
         GeoTiffReader reader = null;
         GridCoverage2D coverage = null;
+        File afternoonTemporaryFile = null;
+        GeoTiffReader afternoonReader = null;
+        GridCoverage2D afternoonCoverage = null;
         try {
-            temporaryFile = File.createTempFile("agrosearch-smap-", ".tif");
-            Files.write(temporaryFile.toPath(), geoTiff);
+            byte[] primaryRaster = rasters.getMorning() != null
+                    ? rasters.getMorning()
+                    : rasters.getAfternoon();
+            if (primaryRaster == null) {
+                throw new IntegracaoException(
+                        "O AppEEARS não forneceu GeoTIFF SMAP válido para o processamento.",
+                        HttpStatus.BAD_GATEWAY);
+            }
+            temporaryFile = File.createTempFile("agrosearch-smap-am-", ".tif");
+            Files.write(temporaryFile.toPath(), primaryRaster);
             reader = new GeoTiffReader(temporaryFile);
             coverage = reader.read(null);
+
+            if (rasters.getMorning() != null && rasters.getAfternoon() != null) {
+                afternoonTemporaryFile = File.createTempFile("agrosearch-smap-pm-", ".tif");
+                Files.write(afternoonTemporaryFile.toPath(), rasters.getAfternoon());
+                afternoonReader = new GeoTiffReader(afternoonTemporaryFile);
+                afternoonCoverage = afternoonReader.read(null);
+            }
 
             if (coverage == null || coverage.getCoordinateReferenceSystem() == null) {
                 throw new IntegracaoException(
@@ -58,6 +81,16 @@ public class ProcessadorGeoTiffService {
             PreparedGeometry preparedPolygon = PreparedGeometryFactory.prepare(polygon);
             GridGeometry2D gridGeometry = coverage.getGridGeometry();
             RenderedImage image = coverage.getRenderedImage();
+            RenderedImage afternoonImage = afternoonCoverage == null
+                    ? null
+                    : afternoonCoverage.getRenderedImage();
+            if (afternoonImage != null
+                    && (image.getWidth() != afternoonImage.getWidth()
+                            || image.getHeight() != afternoonImage.getHeight())) {
+                throw new IntegracaoException(
+                        "Os rasters SMAP da manhã e da tarde não estão alinhados.",
+                        HttpStatus.BAD_GATEWAY);
+            }
             boolean latitudeFirst = isLatitudeFirst(coverage);
             Envelope envelope = polygon.getEnvelopeInternal();
             double minFirstAxis = latitudeFirst ? envelope.getMinY() : envelope.getMinX();
@@ -77,22 +110,23 @@ public class ProcessadorGeoTiffService {
                     image.getHeight());
             Rectangle scanBounds = gridGeometry.worldToGrid(worldBounds).intersection(rasterBounds);
             if (scanBounds.isEmpty()) {
-                return new ArrayList<>();
+                return new ResultadoProcessamentoGeoTiff(new ArrayList<>(), 0, 0);
             }
             scanBounds.grow(1, 1);
             scanBounds = scanBounds.intersection(rasterBounds);
             Raster raster = image.getData(scanBounds);
+            Raster afternoonRaster = afternoonImage == null ? null : afternoonImage.getData(scanBounds);
             List<PontoUmidade> points = new ArrayList<>();
+            long cellsInPolygon = 0;
+            long validCells = 0;
+            long afternoonCells = 0;
 
             for (int y = raster.getMinY(); y < raster.getMinY() + raster.getHeight(); y++) {
                 for (int x = raster.getMinX(); x < raster.getMinX() + raster.getWidth(); x++) {
                     double soilMoisture = raster.getSampleDouble(x, y, 0);
-                    if (!Double.isFinite(soilMoisture)
-                            || soilMoisture < MIN_VALID_MOISTURE
-                            || soilMoisture > MAX_VALID_MOISTURE) {
-                        continue;
-                    }
-
+                    double afternoonMoisture = afternoonRaster == null
+                            ? Double.NaN
+                            : afternoonRaster.getSampleDouble(x, y, 0);
                     Position worldPosition = gridGeometry.gridToWorld(new GridCoordinates2D(x, y));
                     double firstAxis = worldPosition.getOrdinate(0);
                     double secondAxis = worldPosition.getOrdinate(1);
@@ -106,17 +140,28 @@ public class ProcessadorGeoTiffService {
 
                     Point point = GEOMETRY_FACTORY.createPoint(new Coordinate(longitude, latitude));
                     if (preparedPolygon.covers(point)) {
-                        points.add(new PontoUmidade(
-                                latitude,
-                                longitude,
-                                soilMoisture,
-                                null,
-                                ClassificacaoUmidade.SEM_CLASSIFICACAO,
-                                NivelAtencao.NAO_CLASSIFICADO));
+                        cellsInPolygon++;
+                        boolean morningValid = isValidMoisture(soilMoisture);
+                        boolean afternoonValid = isValidMoisture(afternoonMoisture);
+                        if (morningValid || afternoonValid) {
+                            validCells++;
+                            double selectedMoisture = soilMoisture;
+                            if (!morningValid) {
+                                selectedMoisture = afternoonMoisture;
+                                afternoonCells++;
+                            }
+                            points.add(new PontoUmidade(
+                                    latitude,
+                                    longitude,
+                                    selectedMoisture,
+                                    null,
+                                    ClassificacaoUmidade.SEM_CLASSIFICACAO,
+                                    NivelAtencao.NAO_CLASSIFICADO));
+                        }
                     }
                 }
             }
-            return points;
+            return new ResultadoProcessamentoGeoTiff(points, cellsInPolygon, validCells, afternoonCells);
         } catch (IOException | TransformException exception) {
             throw new IntegracaoException(
                     "Não foi possível interpretar o GeoTIFF de umidade do SMAP.",
@@ -126,8 +171,14 @@ public class ProcessadorGeoTiffService {
             if (coverage != null) {
                 coverage.dispose(true);
             }
+            if (afternoonCoverage != null) {
+                afternoonCoverage.dispose(true);
+            }
             if (reader != null) {
                 reader.dispose();
+            }
+            if (afternoonReader != null) {
+                afternoonReader.dispose();
             }
             if (temporaryFile != null) {
                 try {
@@ -136,7 +187,20 @@ public class ProcessadorGeoTiffService {
                     temporaryFile.deleteOnExit();
                 }
             }
+            if (afternoonTemporaryFile != null) {
+                try {
+                    Files.deleteIfExists(afternoonTemporaryFile.toPath());
+                } catch (IOException exception) {
+                    afternoonTemporaryFile.deleteOnExit();
+                }
+            }
         }
+    }
+
+    private boolean isValidMoisture(double moisture) {
+        return Double.isFinite(moisture)
+                && moisture >= MIN_VALID_MOISTURE
+                && moisture <= MAX_VALID_MOISTURE;
     }
 
     private boolean isLatitudeFirst(GridCoverage2D coverage) {

@@ -9,7 +9,12 @@ import {
   ZoomControl,
 } from 'react-leaflet'
 import L from 'leaflet'
-import type { GeographicCoordinate, LocationResult, MoisturePoint } from '../interfaces/geographic'
+import type {
+  GeographicCoordinate,
+  LocationResult,
+  MoisturePoint,
+  RadarIndexPoint,
+} from '../interfaces/geographic'
 import { HeatMapLayer } from './HeatMapLayer'
 
 interface MapCanvasProps {
@@ -18,6 +23,9 @@ interface MapCanvasProps {
   draftCoordinates: GeographicCoordinate[]
   polygon: GeographicCoordinate[]
   moisturePoints: MoisturePoint[]
+  radarPoints: RadarIndexPoint[]
+  showRadarIndex: boolean
+  hasCompleteRefinedMoisture: boolean
   isDrawing: boolean
   onAreaDrawn: (coordinates: GeographicCoordinate[]) => void
 }
@@ -154,6 +162,9 @@ export const MapCanvas = memo(function MapCanvas({
   draftCoordinates,
   polygon,
   moisturePoints,
+  radarPoints,
+  showRadarIndex,
+  hasCompleteRefinedMoisture,
   isDrawing,
   onAreaDrawn,
 }: MapCanvasProps) {
@@ -215,7 +226,37 @@ export const MapCanvas = memo(function MapCanvas({
         />
       )}
 
-      {moisturePoints.length > 0 && <HeatMapLayer points={moisturePoints} />}
+      {!showRadarIndex && moisturePoints.length > 0 && (
+        <HeatMapLayer
+          points={moisturePoints.map((point) => ({
+            latitude: point.latitude,
+            longitude: point.longitude,
+            value: hasCompleteRefinedMoisture
+              ? point.umidadeRefinada ?? point.umidadeVolumetrica
+              : point.umidadeVolumetrica,
+          }))}
+          polygon={polygon}
+          valueMin={0.02}
+          valueMax={0.35}
+          supportDistanceMeters={13_500}
+          layerId="smap"
+        />
+      )}
+      {showRadarIndex && radarPoints.length > 0 && (
+        <HeatMapLayer
+          points={radarPoints.map((point) => ({
+            latitude: point.latitude,
+            longitude: point.longitude,
+            value: point.indiceRetornoRelativo,
+          }))}
+          polygon={polygon}
+          valueMin={0}
+          valueMax={1}
+          supportDistanceMeters={475}
+          layerId="radar"
+          cellSizeMeters={316.227766}
+        />
+      )}
     </MapContainer>
   )
 })

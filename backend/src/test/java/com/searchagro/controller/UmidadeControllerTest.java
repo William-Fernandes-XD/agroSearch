@@ -18,6 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.searchagro.dto.AnaliseUmidadeResponseDTO;
+import com.searchagro.dto.AnalysisJobDTO;
 import com.searchagro.interfaces.UmidadeSoloService;
 import com.searchagro.controllers.ApiExceptionHandler;
 import com.searchagro.controllers.UmidadeController;
@@ -32,15 +33,16 @@ class UmidadeControllerTest {
     private UmidadeSoloService umidadeSoloService;
 
     @Test
-    void analyzesClosedPolygonAndReturnsObservedDataWithoutAgronomicClassification() throws Exception {
-        when(umidadeSoloService.analisar(any())).thenReturn(new AnaliseUmidadeResponseDTO(
-                LocalDate.of(2026, 11, 14),
-                9.0,
-                "SPL3SMP_E.006",
-                "m³/m³",
-                false,
-                "Sem CC e PMP.",
-                Collections.emptyList()));
+    void startsAnalysisAndReturnsAnAcceptedJobId() throws Exception {
+        when(umidadeSoloService.iniciarAnalise(any())).thenReturn(new AnalysisJobDTO(
+                "job-test",
+                "QUEUED",
+                0,
+                "Na fila",
+                "AgroSearch",
+                "Aguardando.",
+                null,
+                null));
 
         mockMvc.perform(post("/api/umidade/analisar")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -50,11 +52,36 @@ class UmidadeControllerTest {
                                 + "{\"latitude\":-16.69,\"longitude\":-49.24},"
                                 + "{\"latitude\":-16.69,\"longitude\":-49.25},"
                                 + "{\"latitude\":-16.68,\"longitude\":-49.25}]}}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.jobId").value("job-test"))
+                .andExpect(jsonPath("$.status").value("QUEUED"))
+                .andExpect(jsonPath("$.percentage").value(0));
+    }
+
+    @Test
+    void returnsAnalysisProgressAndResultByJobId() throws Exception {
+        when(umidadeSoloService.consultarAnalise("job-test")).thenReturn(new AnalysisJobDTO(
+                "job-test",
+                "COMPLETED",
+                100,
+                "Análise concluída",
+                "AgroSearch",
+                "Pronta.",
+                new AnaliseUmidadeResponseDTO(
+                        LocalDate.of(2026, 11, 14),
+                        9.0,
+                        "SPL3SMP_E.006",
+                        "m³/m³",
+                        false,
+                        "Sem CC e PMP.",
+                        Collections.emptyList()),
+                null));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/umidade/analisar/job-test"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.dataReferencia").value("2026-11-14"))
-                .andExpect(jsonPath("$.resolucaoEspacialKm").value(9.0))
-                .andExpect(jsonPath("$.classificacaoDisponivel").value(false))
-                .andExpect(jsonPath("$.pontos").isEmpty());
+                .andExpect(jsonPath("$.percentage").value(100))
+                .andExpect(jsonPath("$.result.dataReferencia").value("2026-11-14"));
     }
 
     @Test

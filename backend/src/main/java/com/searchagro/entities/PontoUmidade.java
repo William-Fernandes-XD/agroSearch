@@ -8,6 +8,10 @@ public class PontoUmidade {
     private double latitude;
     private double longitude;
     private double umidadeVolumetrica;
+    private Double ndvi;
+    private Double temperaturaSuperficieC;
+    private Double indiceSecuraAproximado;
+    private Double umidadeRefinada;
     private Double pad;
     private ClassificacaoUmidade classificacao;
     private NivelAtencao nivelAtencao;
@@ -22,9 +26,37 @@ public class PontoUmidade {
             Double pad,
             ClassificacaoUmidade classificacao,
             NivelAtencao nivelAtencao) {
+        this(
+                latitude,
+                longitude,
+                umidadeVolumetrica,
+                null,
+                null,
+                null,
+                null,
+                pad,
+                classificacao,
+                nivelAtencao);
+    }
+
+    public PontoUmidade(
+            double latitude,
+            double longitude,
+            double umidadeVolumetrica,
+            Double ndvi,
+            Double temperaturaSuperficieC,
+            Double indiceSecuraAproximado,
+            Double umidadeRefinada,
+            Double pad,
+            ClassificacaoUmidade classificacao,
+            NivelAtencao nivelAtencao) {
         this.latitude = latitude;
         this.longitude = longitude;
         this.umidadeVolumetrica = umidadeVolumetrica;
+        this.ndvi = ndvi;
+        this.temperaturaSuperficieC = temperaturaSuperficieC;
+        this.indiceSecuraAproximado = indiceSecuraAproximado;
+        this.umidadeRefinada = umidadeRefinada;
         this.pad = pad;
         this.classificacao = classificacao;
         this.nivelAtencao = nivelAtencao;
@@ -52,6 +84,38 @@ public class PontoUmidade {
 
     public void setUmidadeVolumetrica(double umidadeVolumetrica) {
         this.umidadeVolumetrica = umidadeVolumetrica;
+    }
+
+    public Double getNdvi() {
+        return ndvi;
+    }
+
+    public void setNdvi(Double ndvi) {
+        this.ndvi = ndvi;
+    }
+
+    public Double getTemperaturaSuperficieC() {
+        return temperaturaSuperficieC;
+    }
+
+    public void setTemperaturaSuperficieC(Double temperaturaSuperficieC) {
+        this.temperaturaSuperficieC = temperaturaSuperficieC;
+    }
+
+    public Double getIndiceSecuraAproximado() {
+        return indiceSecuraAproximado;
+    }
+
+    public void setIndiceSecuraAproximado(Double indiceSecuraAproximado) {
+        this.indiceSecuraAproximado = indiceSecuraAproximado;
+    }
+
+    public Double getUmidadeRefinada() {
+        return umidadeRefinada;
+    }
+
+    public void setUmidadeRefinada(Double umidadeRefinada) {
+        this.umidadeRefinada = umidadeRefinada;
     }
 
     public Double getPad() {

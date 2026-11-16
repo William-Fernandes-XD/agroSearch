@@ -9,6 +9,8 @@ public final class Constantes {
     public static final String SMAP_PRODUCT = "SPL3SMP_E.006";
     public static final String SMAP_SOIL_MOISTURE_LAYER =
             "Soil_Moisture_Retrieval_Data_AM_soil_moisture";
+    public static final String SMAP_PM_SOIL_MOISTURE_LAYER =
+            "Soil_Moisture_Retrieval_Data_PM_soil_moisture_pm";
     public static final double SMAP_RESOLUTION_KM = 9.0;
 
     private Constantes() {

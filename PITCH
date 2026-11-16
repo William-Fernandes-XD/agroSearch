@@ -1,0 +1,172 @@
+# AgroSearch — Pitch do projeto
+
+## Pitch rápido — 30 segundos
+
+O AgroSearch transforma dados públicos de satélite em uma visualização simples da umidade do solo por área. O usuário localiza uma região, desenha o polígono de interesse e acompanha a análise na própria página. A aplicação consulta dados SMAP da NASA, processa as células que intersectam a área e apresenta uma superfície visual para facilitar a leitura de diferenças espaciais. A proposta é aproximar dados geoespaciais de quem precisa monitorar áreas agrícolas, com transparência sobre a resolução e as limitações dos dados.
+
+## Pitch — 2 minutos
+
+Quem acompanha uma área agrícola precisa entender como a umidade do solo varia no espaço, mas os dados de satélite costumam exigir conhecimento técnico, ferramentas geoespaciais e tempo para localizar, baixar e interpretar arquivos.
+
+O AgroSearch simplifica esse fluxo. Em uma interface web, a pessoa busca um local, desenha a área que deseja observar e solicita uma análise. O sistema identifica a observação SMAP mais recente disponível, solicita os dados ao serviço NASA AppEEARS, processa o arquivo geográfico e apresenta os valores válidos dentro do polígono em um mapa.
+
+Para deixar o processo compreensível, a página informa qual etapa está acontecendo, qual serviço está sendo usado e o progresso estimado. O mapa interpola visualmente os valores disponíveis para mostrar zonas de menor e maior umidade, com uma escala de cores de vermelho a azul.
+
+O AgroSearch não apresenta essa visualização como medição de cada propriedade nem como recomendação automática de irrigação. O SMAP utilizado tem resolução espacial nominal de aproximadamente 9 km. A interpolação serve para facilitar a leitura dos dados e não cria medições novas. A plataforma também deixa explícito que classificações agronômicas confiáveis dependem de informações locais, como solo, cultura, capacidade de campo e ponto de murcha permanente.
+
+Nossa visão é tornar dados geoespaciais públicos mais acessíveis e evoluir para uma ferramenta de apoio ao monitoramento agrícola, mantendo rastreabilidade das fontes, clareza sobre a incerteza e espaço para validação com dados de campo.
+
+## Problema
+
+- Dados de satélite são valiosos, mas nem sempre fáceis de acessar e interpretar por quem não trabalha com geoprocessamento.
+- A consulta e o processamento de arquivos geoespaciais podem exigir várias ferramentas e etapas manuais.
+- Um resultado sem contexto pode ser confundido com uma medição local ou uma recomendação agronômica.
+- Processamentos remotos podem demorar; sem retorno de status, o usuário não sabe se a análise está avançando.
+
+## Solução
+
+O AgroSearch oferece um fluxo web para selecionar uma área e visualizar dados de umidade do solo associados a ela:
+
+1. A pessoa busca uma localidade e desenha uma área no mapa.
+2. O backend identifica no catálogo NASA CMR a data mais recente disponível do produto SMAP.
+3. O AppEEARS prepara e disponibiliza o arquivo SMAP solicitado para a área.
+4. O backend processa as passagens SMAP AM e PM, prioriza AM e usa PM como alternativa quando AM não tem valor válido; em seguida seleciona as células dentro do polígono.
+5. A interface mostra os dados, a data de referência, a resolução nominal, alertas de disponibilidade e o andamento das etapas.
+6. Uma camada visual interpola os pontos disponíveis para formar zonas de calor dentro da área selecionada.
+7. Opcionalmente, uma camada experimental Sentinel-1 mostra o retorno relativo do radar numa grade-alvo de aproximadamente 10 ha, separada do SMAP.
+
+## Proposta de valor
+
+- **Acesso simplificado:** análise de uma área a partir de um mapa, sem exigir que a pessoa baixe e processe o raster manualmente.
+- **Contexto e transparência:** exibição da fonte, da data, da resolução e dos avisos relevantes.
+- **Acompanhamento:** indicação das etapas, ferramentas e progresso estimado enquanto a NASA processa a solicitação.
+- **Leitura espacial:** mapa com gradiente de cores para destacar diferenças relativas entre os valores observados na área.
+- **Uso de dados públicos:** aproveitamento de fontes geoespaciais e ambientais disponibilizadas por instituições públicas.
+
+## Para quem estamos construindo
+
+Públicos potenciais a validar:
+
+- Produtores e gestores rurais que precisam acompanhar áreas extensas.
+- Consultores e profissionais de agronomia que desejam explorar dados de satélite como contexto adicional.
+- Cooperativas, equipes de assistência técnica e organizações ligadas ao monitoramento agrícola.
+- Pesquisadores, estudantes e equipes que trabalham com dados geoespaciais e agricultura.
+
+Esses públicos são hipóteses de mercado; precisam ser confirmados com entrevistas, pilotos e validação em campo.
+
+## Como o mapa deve ser interpretado
+
+- Vermelho representa valores menores de umidade volumétrica; laranja e amarelo são transições; ciano e azul representam valores maiores, usando uma escala fixa.
+- A escala de cores é uma visualização dos dados disponíveis, não uma classificação universal de seca ou de condição ideal.
+- O gradiente é interpolado somente perto de células válidas para facilitar a leitura. Áreas sem suporte suficiente ficam sem preenchimento; a interpolação não aumenta a resolução científica nem cria observações adicionais.
+- O produto SMAP utilizado tem resolução nominal de aproximadamente 9 km. Não deve ser interpretado como medição precisa de cada ponto da propriedade.
+- A camada experimental Sentinel-1 tem células-alvo de aproximadamente 316 m, mas mostra somente contraste relativo do retorno do radar normalizado dentro da área; não é uma leitura de umidade do solo em cada célula nem um valor em m³/m³.
+- O retorno do radar também depende de vegetação, rugosidade, relevo, ângulo/orbita e água. O índice precisa de validação local antes de qualquer interpretação agronômica.
+- Corpos d’água, áreas urbanas, cobertura de nuvens/órbita, dados ausentes e características locais podem afetar a disponibilidade ou a interpretação.
+- Não há recomendação automática de irrigação. Para uma classificação agronômica, são necessários parâmetros locais e validação apropriada.
+
+## Produto e arquitetura atual
+
+- **Interface:** React, TypeScript, Vite e Leaflet.
+- **Backend:** Java 11 e Spring Boot.
+- **Fonte de umidade:** SMAP Enhanced L3 Radiometer Global Daily, coleção `SPL3SMP_E.006`, entregue por NASA AppEEARS.
+- **Camada experimental complementar:** retorno VV Sentinel-1 via Copernicus Data Space Process API, habilitado somente com OAuth client configurado no backend.
+- **Catálogo de datas e metadados:** NASA CMR.
+- **Dados complementares em avaliação:** NDVI MODIS via AppEEARS e temperatura `TS` via NASA POWER. São camadas complementares e não substituem o dado SMAP.
+- **Geocodificação:** Nominatim/OpenStreetMap.
+- **Processamento:** leitura do GeoTIFF, seleção de células dentro do polígono, limite de até 1.000 pontos apresentados por análise e cache temporário de análises repetidas da mesma área.
+- **Acompanhamento:** a análise é executada em segundo plano; a interface consulta o status e recebe o resultado ao final.
+
+## Modelo de negócio — hipóteses para explorar
+
+O modelo ainda precisa ser validado. Possibilidades para investigação:
+
+- Plano gratuito para consulta e exploração básica de áreas.
+- Assinatura para monitorar múltiplas propriedades, salvar áreas e receber histórico ou alertas.
+- Licenciamento para cooperativas, consultorias, pesquisa ou organizações com muitas áreas.
+- Integração e serviços de análise com dados de campo e parâmetros específicos de cada operação.
+
+Qualquer oferta comercial deve considerar licenças, políticas de uso, disponibilidade das APIs, custos de infraestrutura, qualidade dos dados e validação agronômica. Não se deve prometer precisão ou economia antes de medir esses resultados em pilotos.
+
+## Próximos passos estratégicos
+
+1. Validar o fluxo e a utilidade da visualização com produtores e profissionais agrícolas.
+2. Comparar resultados com medições de campo em diferentes solos, culturas e épocas.
+3. Definir faixas de interpretação com especialistas e dados locais, em vez de tratar limites genéricos como universais.
+4. Avaliar fontes de maior resolução e dados complementares para escalas de propriedade.
+5. Medir latência, disponibilidade das fontes, custo por análise e comportamento em áreas grandes.
+6. Testar com usuários se as zonas de calor e o acompanhamento do processamento são compreensíveis.
+
+## Perguntas que podem fazer — e respostas
+
+### 1. O que é o AgroSearch?
+
+É uma aplicação web que permite selecionar uma área e visualizar dados de umidade superficial do solo derivados de satélite, com mapa, data de referência e informações sobre a fonte e as limitações dos dados.
+
+### 2. Qual problema o projeto resolve?
+
+Reduz a complexidade de localizar e processar dados geoespaciais de satélite. Em vez de baixar manualmente arquivos e usar ferramentas especializadas, a pessoa seleciona uma área no mapa e acompanha a análise pela interface.
+
+### 3. De onde vêm os dados de umidade?
+
+Do produto SMAP Enhanced L3 Radiometer Global Daily, coleção `SPL3SMP_E.006`, disponibilizado para a área pelo NASA AppEEARS. O NASA CMR é usado para consultar metadados e a data mais recente disponível.
+
+### 4. O AgroSearch mede a umidade diretamente na fazenda?
+
+Não. O sistema apresenta dados de satélite em grade. A resolução nominal do SMAP usado é de aproximadamente 9 km, e isso não equivale a uma medição no solo de cada propriedade ou ponto mostrado.
+
+### 5. O mapa cria dados onde não existem?
+
+Não cria novas medições. O gradiente interpola visualmente valores de células disponíveis para facilitar a leitura espacial. A resolução e a quantidade real de observações continuam limitadas pelo produto de origem.
+
+### 6. O que significam as cores?
+
+Representam diferenças de umidade na escala visual do mapa: vermelho para valores menores, laranja e amarelo para transições e azul para valores maiores. Sem calibração local, não devem ser interpretadas como limites universais de seca, ideal agronômico ou necessidade de irrigação.
+
+### 7. Azul significa que a área está ideal para a cultura?
+
+Não necessariamente. Azul indica valores relativamente maiores na visualização. A condição ideal depende, entre outros fatores, do tipo de solo, cultura, fase de desenvolvimento e manejo. Esses parâmetros precisam ser conhecidos e validados para uma interpretação agronômica.
+
+### 8. O AgroSearch recomenda quando irrigar?
+
+Não. O produto atual não gera uma recomendação agronômica de irrigação. Para isso, seriam necessários parâmetros como capacidade de campo, ponto de murcha permanente, cultura, clima local e validação por profissionais e medições de campo.
+
+### 9. Por que a análise pode demorar?
+
+O AppEEARS processa as solicitações de forma assíncrona. O tempo depende dos serviços NASA, da disponibilidade dos dados, da área consultada e do processamento dos arquivos. O AgroSearch mostra as etapas e mantém um limite de espera configurável, mas não controla o tempo dos serviços externos.
+
+### 10. O que acontece quando seleciono uma área muito grande?
+
+Uma área maior pode levar mais tempo no AppEEARS e incluir mais células. Para controlar o volume encaminhado às etapas seguintes, a aplicação limita a resposta a até 1.000 pontos SMAP, selecionados de forma determinística. Isso não reduz necessariamente o tempo que o serviço NASA leva para gerar o raster.
+
+### 11. Por que pode haver pontos sem dados, especialmente em rios, lagos ou cidades?
+
+O produto pode não fornecer valores válidos para todas as células, e superfícies de água ou áreas urbanas podem ter comportamento ou cobertura diferente. A falta de valor não é, por si só, uma classificação confiável do uso do solo; é preciso consultar dados de cobertura terrestre e validar a área.
+
+### 12. O sistema funciona em qualquer lugar?
+
+O SMAP tem cobertura global, mas disponibilidade, qualidade, resolução efetiva e latência variam. O funcionamento também depende do acesso ao AppEEARS e das políticas e limites dos serviços externos.
+
+### 13. O NDVI e a temperatura são necessários para a umidade SMAP?
+
+Não. O SMAP é a fonte principal da umidade. NDVI do MODIS e temperatura `TS` da NASA POWER são dados complementares do projeto; podem apoiar análises adicionais, mas não substituem nem aumentam a resolução do SMAP.
+
+### 14. Qual é a diferença entre resolução e precisão?
+
+Resolução descreve o tamanho nominal da célula da grade. Precisão descreve o quanto o valor representa a condição real. Uma célula de aproximadamente 9 km não garante que o valor represente com precisão uma fazenda ou um ponto específico.
+
+### 15. Como vocês vão comprovar a qualidade do produto?
+
+Comparando as estimativas com medições de campo em condições variadas, documentando métricas e limitações, e validando as faixas de interpretação com especialistas. Até essa validação, o mapa deve ser tratado como exploração de dados de satélite, não como instrumento de decisão agronômica autônoma.
+
+### 16. Qual é o estágio atual do projeto?
+
+O projeto já tem uma interface de mapa, desenho de polígonos, integração com fontes NASA, processamento de GeoTIFF, apresentação de resultados e acompanhamento do processamento. A calibração agronômica, a validação de campo, a identificação confiável de cobertura terrestre e a validação comercial permanecem como trabalhos futuros.
+
+### 17. Como o projeto pode gerar receita?
+
+Ainda não há um modelo validado. Estamos explorando possibilidades como monitoramento de múltiplas áreas, alertas e histórico, licenciamento para organizações e integração com dados locais. O modelo deve ser definido com base em pilotos e custos reais de operação.
+
+### 18. Já é possível obter uma leitura confiável de umidade a cada 10 hectares?
+
+Não com os dados atuais. O SMAP continua fornecendo a umidade numa grade nominal de aproximadamente 9 km. A camada experimental Sentinel-1 usa células-alvo de aproximadamente 316 m para mostrar o retorno relativo do radar, mas não mede a umidade do solo nem produz valores em m³/m³. Ela depende de credenciais Copernicus e precisa de validação local antes de qualquer uso agronômico.

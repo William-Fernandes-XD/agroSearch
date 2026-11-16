@@ -1,8 +1,11 @@
 package com.searchagro.dto;
 
 import java.time.LocalDate;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
+import com.searchagro.entities.PontoIndiceRadar;
 import com.searchagro.entities.PontoUmidade;
 
 public class AnaliseUmidadeResponseDTO {
@@ -14,6 +17,11 @@ public class AnaliseUmidadeResponseDTO {
     private boolean classificacaoDisponivel;
     private String aviso;
     private List<PontoUmidade> pontos;
+    private List<PontoIndiceRadar> pontosIndiceRadar = Collections.emptyList();
+    private double resolucaoRadarMetros = 316.227766;
+    private String periodoRadar;
+    private String avisoRadar;
+    private Map<String, Long> temposConsultaMs = Collections.emptyMap();
 
     public AnaliseUmidadeResponseDTO() {
     }
@@ -89,5 +97,47 @@ public class AnaliseUmidadeResponseDTO {
 
     public void setPontos(List<PontoUmidade> pontos) {
         this.pontos = pontos;
+    }
+
+    public List<PontoIndiceRadar> getPontosIndiceRadar() {
+        return pontosIndiceRadar;
+    }
+
+    public void setPontosIndiceRadar(List<PontoIndiceRadar> pontosIndiceRadar) {
+        this.pontosIndiceRadar = pontosIndiceRadar == null
+                ? Collections.emptyList()
+                : pontosIndiceRadar;
+    }
+
+    public double getResolucaoRadarMetros() {
+        return resolucaoRadarMetros;
+    }
+
+    public void setResolucaoRadarMetros(double resolucaoRadarMetros) {
+        this.resolucaoRadarMetros = resolucaoRadarMetros;
+    }
+
+    public String getPeriodoRadar() {
+        return periodoRadar;
+    }
+
+    public void setPeriodoRadar(String periodoRadar) {
+        this.periodoRadar = periodoRadar;
+    }
+
+    public String getAvisoRadar() {
+        return avisoRadar;
+    }
+
+    public void setAvisoRadar(String avisoRadar) {
+        this.avisoRadar = avisoRadar;
+    }
+
+    public Map<String, Long> getTemposConsultaMs() {
+        return temposConsultaMs;
+    }
+
+    public void setTemposConsultaMs(Map<String, Long> temposConsultaMs) {
+        this.temposConsultaMs = temposConsultaMs == null ? Collections.emptyMap() : temposConsultaMs;
     }
 }

@@ -25,7 +25,7 @@ public class HttpClientConfig {
             @Value("${integracao.response-timeout:30s}") Duration responseTimeout,
             @Value("${nasa.earthdata.username:}") String earthdataUsername,
             @Value("${nasa.earthdata.password:}") String earthdataPassword,
-            @Value("${nasa.appeears.task-timeout:240s}") Duration appEearsTaskTimeout) {
+            @Value("${nasa.appeears.task-timeout:900s}") Duration appEearsTaskTimeout) {
         return new IntegracaoProperties(
                 userAgent,
                 responseTimeout,
